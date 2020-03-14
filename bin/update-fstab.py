@@ -78,7 +78,7 @@ def blockNameByUuid(uuid):
 
 def getLocale():
     try:
-        for line in file("/etc/env.d/03locale"):
+        for line in open("/etc/env.d/03locale"):
             if "LC_ALL" in line:
                 return line[7:].strip()
     except:
@@ -118,7 +118,7 @@ class FstabEntry:
 
 
 class Fstab:
-    comment = """# See the manpage fstab(5) for more information.
+    comment = """# See the manpage fstab(5) for more information.
 #
 #   <fs>             <mountpoint>     <type>    <opts>               <dump/pass>
 """
@@ -131,7 +131,7 @@ class Fstab:
         self.partitions = None
         self.labels = {}
         self.uuids = {}
-        for line in file(path):
+        for line in open(path):
             if line.strip() != "" and not line.startswith('#'):
                 self.entries.append(FstabEntry(line))
 
@@ -160,7 +160,7 @@ class Fstab:
             if entry.mount_point != "none" and not os.path.exists(entry.mount_point):
                 os.makedirs(entry.mount_point)
 
-        f = file(path, "w")
+        f = open(path, "w")
         f.write(self.comment)
         f.write(str(self))
         f.write("\n")
@@ -222,26 +222,26 @@ class Fstab:
                 continue
             elif node.startswith("UUID="):
                 uuid = node.split("=", 1)[1]
-                if not self.partitions.has_key(blockNameByUuid(uuid)):
+                if blockNameByUuid(uuid) not in self.partitions:
                     removal.append(node)
             elif node.startswith("LABEL="):
                 label = node.split("=", 1)[1]
                 if label in pardus_labels:
-                    # Labelled Pardus system partitions are never removed
+                    # Labelled Pardus system partitions are never removed
                     continue
-                if not self.partitions.has_key(blockNameByLabel(label)):
+                if blockNameByLabel(label) not in self.partitions:
                     removal.append(node)
             elif node.startswith("UUID="):
                 uuid = node.split("=", 1)[1]
-                if not self.partitions.has_key(blockNameByUuid(uuid)):
+                if blockNameByUuid(uuid) not in self.partitions:
                     removal.append(node)
             else:
-                if not self.partitions.has_key(node):
+                if node not in self.partitions:
                     removal.append(node)
-        map(self.removeEntry, removal)
+        list(map(self.removeEntry, removal))
 
         # Append all other existing non-removable partitions
-        mounted = set(map(lambda x: x.device_node, self.entries))
+        mounted = set([x.device_node for x in self.entries])
         for part in self.partitions:
             if not part in mounted:
                 if part in self.labels:
@@ -258,13 +258,13 @@ class Fstab:
 def refresh_fstab(path=None, debug=False):
     f = Fstab(path)
     if debug:
-        print "Fstab file:", f.path
-        print "--- Current table ---"
-        print f
+        print("Fstab file:", f.path)
+        print("--- Current table ---")
+        print(f)
     f.refresh()
     if debug:
-        print "--- Refreshed table ---"
-        print f
+        print("--- Refreshed table ---")
+        print(f)
     else:
         f.write()
 

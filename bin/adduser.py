@@ -16,10 +16,10 @@ from optparse import OptionParser
 
 user = {"uid": -1,
         "username": "kaplan",
-        "realname": "Pardus",
-        "home": "/home/kaplan",
+        "realname": "Pisi",
+        "home": "/home/pisi",
         "shell": "/bin/bash",
-        "password": "pardus",
+        "password": "pisi",
         "defaultgroup": "users",
         "groups": [],
         "admingroups": ["wheel"],
@@ -30,7 +30,7 @@ user = {"uid": -1,
 defaultGroups = "users,cdrom,plugdev,floppy,disk,audio,video,power,dialout,lp,lpadmin"
 
 def fail(_message):
-    print _message
+    print(_message)
     sys.exit(1)
 
 def connectToDBus():
@@ -52,7 +52,7 @@ def addUser():
                     user["home"], user["shell"], user["password"],
                     user["groups"], user["grants"], user["blocks"],
                     dbus_interface="tr.org.pardus.comar.User.Manager")
-    except dbus.DBusException, e:
+    except dbus.DBusException as e:
         fail("Error: %s" % e)
 
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     usage = "usage: %prog [options] username"
     parser = OptionParser(usage=usage)
 
-    parser.add_option("-c", "--comment", dest="realname", type="string", default="Pardus",
+    parser.add_option("-c", "--comment", dest="realname", type="string", default="Pisi",
             help="comment for the user, usually used for Full Name")
 
     parser.add_option("-u", "--uid", dest="uid", type="int", default=-1,
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     parser.add_option("-G", "--groups", dest="groups", type="string", default=defaultGroups,
             help="groups that user is member of")
 
-    parser.add_option("-p", "--password", dest="password", type="string", default="pardus",
+    parser.add_option("-p", "--password", dest="password", type="string", default="pisi",
             help="password")
 
     parser.add_option("-d", "--home", dest="home", type="string", default="",
@@ -121,8 +121,8 @@ if __name__ == "__main__":
     user["uid"] = opts.uid
 
     if opts.dryrun:
-        for i in user.keys():
-            print "%s\t%s" % (i, user[i])
+        for i in list(user.keys()):
+            print("%s\t%s" % (i, user[i]))
     else:
         if os.getuid() != 0:
             fail("You must have root permissions to add a user")
@@ -130,4 +130,3 @@ if __name__ == "__main__":
         if not connectToDBus():
             fail("Could not connect to D-Bus, please check your system settings")
         addUser()
-

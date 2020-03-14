@@ -23,13 +23,13 @@ import subprocess
 
 import gettext
 __trans = gettext.translation('mudur', fallback=True)
-_ = __trans.ugettext
+_ = __trans.gettext
 
 # Utilities
 
 def loadConfig(path):
     d = {}
-    for line in file(path):
+    for line in open(path):
         if line != "" and not line.startswith("#") and "=" in line:
             key, value = line.split("=", 1)
             key = key.strip()
@@ -103,9 +103,9 @@ def format_service_list(services, use_color=True):
     auto_title = _("Autostart")
     desc_title = _("Description")
 
-    run_size  = max(max(map(lambda x: len(x.running), services)), len(run_title))
-    name_size = max(max(map(lambda x: len(x.name), services)), len(name_title))
-    auto_size = max(max(map(lambda x: len(x.autostart), services)), len(auto_title))
+    run_size  = max(max([len(x.running) for x in services]), len(run_title))
+    name_size = max(max([len(x.name) for x in services]), len(name_title))
+    auto_size = max(max([len(x.autostart) for x in services]), len(auto_title))
     desc_size = len(desc_title)
 
     line = "%s | %s | %s | %s" % (
@@ -114,8 +114,8 @@ def format_service_list(services, use_color=True):
         auto_title.center(auto_size),
         desc_title.center(desc_size)
     )
-    print line
-    print "-" * (len(line))
+    print(line)
+    print("-" * (len(line)))
 
     cstart = ""
     cend = ""
@@ -135,7 +135,7 @@ def format_service_list(services, use_color=True):
             service.description,
             cend
         )
-        print line
+        print(line)
 
 def readyService(service):
     try:
@@ -143,9 +143,9 @@ def readyService(service):
         link.setLocale()
         link.useAgent(False)
         link.System.Service[service].ready()
-    except dbus.DBusException, e:
-        print _("Unable to start %s:") % service
-        print "  %s" % e.args[0]
+    except dbus.DBusException as e:
+        print(_("Unable to start %s:") % service)
+        print("  %s" % e.args[0])
 
 def startService(service, quiet=False):
     try:
@@ -153,12 +153,12 @@ def startService(service, quiet=False):
         link.setLocale()
         link.useAgent(False)
         link.System.Service[service].start()
-    except dbus.DBusException, e:
-        print _("Unable to start %s:") % service
-        print "  %s" % e.args[0]
+    except dbus.DBusException as e:
+        print(_("Unable to start %s:") % service)
+        print("  %s" % e.args[0])
         return
     if not quiet:
-        print _("Starting %s") % service
+        print(_("Starting %s") % service)
 
 def stopService(service, quiet=False):
     try:
@@ -166,12 +166,12 @@ def stopService(service, quiet=False):
         link.setLocale()
         link.useAgent(False)
         link.System.Service[service].stop()
-    except dbus.DBusException, e:
-        print _("Unable to stop %s:") % service
-        print "  %s" % e.args[0]
+    except dbus.DBusException as e:
+        print(_("Unable to stop %s:") % service)
+        print("  %s" % e.args[0])
         return
     if not quiet:
-        print _("Stopping %s") % service
+        print(_("Stopping %s") % service)
 
 def setServiceState(service, state, quiet=False):
     try:
@@ -179,17 +179,17 @@ def setServiceState(service, state, quiet=False):
         link.setLocale()
         link.useAgent(False)
         link.System.Service[service].setState(state)
-    except dbus.DBusException, e:
-        print _("Unable to set %s state:") % service
-        print "  %s" % e.args[0]
+    except dbus.DBusException as e:
+        print(_("Unable to set %s state:") % service)
+        print("  %s" % e.args[0])
         return
     if not quiet:
         if state == "on":
-            print _("Service '%s' will be auto started.") % service
+            print(_("Service '%s' will be auto started.") % service)
         elif state == "off":
-            print _("Service '%s' won't be auto started.") % service
+            print(_("Service '%s' won't be auto started.") % service)
         else:
-            print _("Service '%s' will be started if required.") % service
+            print(_("Service '%s' will be started if required.") % service)
 
 def reloadService(service, quiet=False):
     try:
@@ -197,12 +197,12 @@ def reloadService(service, quiet=False):
         link.setLocale()
         link.useAgent(False)
         link.System.Service[service].reload()
-    except dbus.DBusException, e:
-        print _("Unable to reload %s:") % service
-        print "  %s" % e.args[0]
+    except dbus.DBusException as e:
+        print(_("Unable to reload %s:") % service)
+        print("  %s" % e.args[0])
         return
     if not quiet:
-        print _("Reloading %s") % service
+        print(_("Reloading %s") % service)
 
 def getServiceInfo(service):
     link = comar.Link()
@@ -256,31 +256,31 @@ def run(*cmd):
 
 def manage_dbus(op, use_color, quiet):
     if os.getuid() != 0 and op not in ["status", "info", "list"]:
-        print _("You must be root to use that.")
+        print(_("You must be root to use that."))
         return -1
 
     def cleanup():
         try:
-            os.unlink("/var/run/dbus/pid")
-            os.unlink("/var/run/dbus/system_bus_socket")
+            os.unlink("/run/dbus/pid")
+            os.unlink("/run/dbus/system_bus_socket")
         except OSError:
             pass
     if op == "start":
         if not quiet:
-            print _("Starting %s") % "DBus"
+            print(_("Starting %s") % "DBus")
         cleanup()
         if not os.path.exists("/var/lib/dbus/machine-id"):
             run("/usr/bin/dbus-uuidgen", "--ensure")
         run("/sbin/start-stop-daemon", "-b", "--start", "--quiet",
-            "--pidfile", "/var/run/dbus/pid", "--exec", "/usr/bin/dbus-daemon",
+            "--pidfile", "/run/dbus/pid", "--exec", "/usr/bin/dbus-daemon",
             "--", "--system")
-        if not waitBus("/var/run/dbus/system_bus_socket", timeout=20):
-            print _("Unable to start DBus")
+        if not waitBus("/run/dbus/system_bus_socket", timeout=20):
+            print(_("Unable to start DBus"))
             return -1
     elif op == "stop":
         if not quiet:
-            print _("Stopping %s") % "DBus"
-        run("/sbin/start-stop-daemon", "--stop", "--quiet", "--pidfile", "/var/run/dbus/pid")
+            print(_("Stopping %s") % "DBus")
+        run("/sbin/start-stop-daemon", "--stop", "--quiet", "--pidfile", "/run/dbus/pid")
         cleanup()
     elif op == "restart":
         manage_dbus("stop", use_color, quiet)
@@ -289,14 +289,14 @@ def manage_dbus(op, use_color, quiet):
         try:
             dbus.SystemBus()
         except dbus.DBusException:
-            print _("DBus is not running.")
+            print(_("DBus is not running."))
             return
-        print _("DBus is running.")
+        print(_("DBus is running."))
 
 # Usage
 
 def usage():
-    print _("""usage: service [<options>] [<service>] <command>
+    print(_("""usage: service [<options>] [<service>] <command>
 where command is:
  list     Display service list
  status   Display service status
@@ -309,7 +309,7 @@ where command is:
  reload   Reload the configuration (if service supports this)
 and option is:
  -N, --no-color  Don't use color in output
- -q, --quiet     Don't print replies""")
+ -q, --quiet     Don't print replies"""))
 
 # Main
 
@@ -350,14 +350,14 @@ def main(args):
     elif args[1] in operations:
         try:
             manage_service(args[0].replace("-", "_"), args[1], use_color, quiet)
-        except dbus.DBusException, e:
+        except dbus.DBusException as e:
             if "Unable to find" in str(e):
-                print _("No such service: %s") % args[0]
+                print(_("No such service: %s") % args[0])
             else:
-                print "  %s" % e.args[0]
+                print("  %s" % e.args[0])
                 return -1
-        except ValueError, e:
-            print e
+        except ValueError as e:
+            print(e)
             return -1
     else:
         usage()

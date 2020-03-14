@@ -46,6 +46,7 @@ specials = (
     "PKG_CONFIG_PATH"
 )
 
+
 def read_env_d(envdir):
     d = {}
 
@@ -66,7 +67,7 @@ def read_env_d(envdir):
     paths.sort()
 
     for path in paths:
-        for line in file(path):
+        for line in open(path):
             if line == "" or line.startswith("#"):
                 continue
 
@@ -80,7 +81,7 @@ def read_env_d(envdir):
 
                 # Merge for special variables, override for others
                 if key in specials:
-                    if d.has_key(key):
+                    if key in d:
                         d[key].extend(value.split(":"))
                     else:
                         d[key] = value.split(":")
@@ -89,9 +90,10 @@ def read_env_d(envdir):
 
     return d
 
+
 def generate_profile_env(envdict, format='export %s="%s"\n'):
     profile = ""
-    keys = envdict.keys()
+    keys = list(envdict.keys())
     keys.sort()
     for key in keys:
         tmp = envdict[key]
@@ -100,10 +102,12 @@ def generate_profile_env(envdict, format='export %s="%s"\n'):
         profile += format % (key, tmp)
     return header + header_note + profile
 
+
 def update_file(path, content):
-    f = file(path, "w")
+    f = open(path, "w", encoding='utf-8')
     f.write(content)
     f.close()
+
 
 def update_environment(prefix):
     join = os.path.join
@@ -116,14 +120,16 @@ def update_environment(prefix):
 # Command line driver
 #
 
+
 def usage():
-    print "update-environment [--destdir <prefix>]"
+    print("update-environment [--destdir <prefix>]")
+
 
 def main(argv):
     prefix = "/"
 
     try:
-        opts, args = getopt.gnu_getopt(argv, "h", [ "help", "destdir=", "live" ])
+        opts, args = getopt.gnu_getopt(argv, "h", ["help", "destdir=", "live"])
     except getopt.GetoptError:
         usage()
 
@@ -131,10 +137,11 @@ def main(argv):
         if o in ("-h", "--help"):
             usage()
             sys.exit(0)
-        if o in ("--destdir"):
+        if o in "--destdir":
             prefix = a
 
     update_environment(prefix)
+
 
 if __name__ == "__main__":
     main(sys.argv[1:])

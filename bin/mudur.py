@@ -17,17 +17,19 @@ Pardus booting and initialization system written in Python.
 import os
 import re
 import sys
+import stat
 import time
 import signal
 import gettext
 import subprocess
+from mudur_cgroupfs import Cgroupfs
 
 ########
 # i18n #
 ########
 
 __trans = gettext.translation('mudur', fallback=True)
-_ = __trans.ugettext
+_ = __trans.gettext
 
 ##############
 # Decorators #
@@ -108,6 +110,13 @@ def create_directory(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
+def create_link(src, dest, hardLink=False):
+    """Create link from src to dest. """
+    if hardLink:
+        os.link(src, dest)
+    else:
+        os.symlink(src, dest)
+
 def mtime(filename):
     """Returns the last modification time of a file."""
     m_time = 0
@@ -133,12 +142,12 @@ def touch(filename):
             os.utime(filename, None)
         else:
             open(filename, "w").close()
-    except IOError, error:
+    except IOError as error:
         if error.errno != 13:
             raise
         else:
             return False
-    except OSError, error:
+    except OSError as error:
         if error.errno != 13:
             raise
         else:
@@ -360,10 +369,10 @@ class Config:
         options = get_kernel_option("mudur")
 
         # Fill in the options
-        self.options["live"] = options.has_key("thin") or \
-                               os.path.exists("/var/run/pardus/livemedia")
+        self.options["live"] = "thin" in options or \
+                               os.path.exists("/run/pisilinux/livemedia")
 
-        for k in [_k for _k in options.keys() if _k not in ("thin")]:
+        for k in [_k for _k in list(options.keys()) if _k not in ("thin")]:
             self.options[k] = options[k] if options[k] else True
 
         # Normalize options
@@ -373,8 +382,8 @@ class Config:
         # selected a language which isn't Turkish or English, and
         # in that case it is more likely they'll prefer English.
         lang = self.options["language"]
-        if not LANGUAGES.has_key(lang):
-            print "Unknown language option '%s'" % lang
+        if lang not in LANGUAGES:
+            print("Unknown language option '%s'" % lang)
             lang = "en"
             self.options["language"] = lang
 
@@ -387,7 +396,7 @@ class Config:
         try:
             return self.options[key]
         except KeyError:
-            print "Unknown option '%s' requested" % key
+            print("Unknown option '%s' requested" % key)
             time.sleep(3)
 
     def get_fstab_entry_with_mountpoint(self, mountpoint):
@@ -482,14 +491,14 @@ class Ui:
 
     def greet(self):
         """Dump release information, sets unicode mode."""
-        print self.UNICODE_MAGIC
-        if os.path.exists("/etc/pardus-release"):
-            release = load_file("/etc/pardus-release").rstrip("\n")
-            print "\x1b[1m  %s  \x1b[0;36mhttp://www.pardus.org.tr\x1b[0m" \
-                    % release
+        print(self.UNICODE_MAGIC)
+        if os.path.exists("/etc/pisilinux-release"):
+            release = load_file("/etc/pisilinux-release").rstrip("\n")
+            print("\x1b[1m  %s  \x1b[0;36mhttp://www.pisilinux.org\x1b[0m" \
+                    % release)
         else:
-            self.error(_("Cannot find /etc/pardus-release"))
-        print
+            self.error(_("Cannot find /etc/pisilinux-release"))
+        print()
 
     def info(self, msg):
         """Print the given message and log if debug enabled."""
@@ -592,7 +601,7 @@ def load_translations():
     global _
     lang = CONFIG.get("language")
     __trans = gettext.translation('mudur', languages=[lang], fallback=True)
-    _ = __trans.ugettext
+    _ = __trans.gettext
 
 def set_unicode_mode():
     """Makes TTYs unicode compatible."""
@@ -600,7 +609,7 @@ def set_unicode_mode():
     lang = CONFIG.get("language")
     language = LANGUAGES[lang]
 
-    for i in xrange(1, int(CONFIG.get("tty_number")) + 1):
+    for i in range(1, int(CONFIG.get("tty_number")) + 1):
         try:
             if os.path.exists("/dev/tty%s" % i):
                 with open("/dev/tty%s" % i, "w") as _file:
@@ -623,7 +632,7 @@ def fork_handler():
 
     # Set umask to a sane value
     # (other and group has no write permission by default)
-    os.umask(022)
+    os.umask(0o22)
     # Detach from controlling terminal
     try:
         tty_fd = os.open("/dev/tty", os.O_RDWR)
@@ -683,7 +692,7 @@ def start_services(extras=None):
         # Start network service first
         try:
             manage_service("NetworkManager", "ready")
-        except Exception, error:
+        except Exception as error:
             UI.warn(_("Unable to start network:\n  %s") % error)
 
         # Almost everything depends on logger, so start manually
@@ -759,17 +768,19 @@ def start_dbus():
     UI.info(_("Starting %s") % "DBus")
     if not os.path.exists("/var/lib/dbus/machine-id"):
         run("/usr/bin/dbus-uuidgen", "--ensure")
+    if not os.path.exists("/run/dbus"):
+        create_directory("/run/dbus")
     run("/sbin/start-stop-daemon", "-b", "--start", "--quiet",
-        "--pidfile", "/var/run/dbus/pid", "--exec", "/usr/bin/dbus-daemon",
+        "--pidfile", "/run/dbus/pid", "--exec", "/usr/bin/dbus-daemon",
         "--", "--system")
-    wait_bus("/var/run/dbus/system_bus_socket")
+    wait_bus("/run/dbus/system_bus_socket")
 
 @plymouth_update_milestone
 def stop_dbus():
     """Stops the D-Bus service."""
     UI.info(_("Stopping %s") % "DBus")
     run("/sbin/start-stop-daemon", "--stop", "--quiet",
-            "--pidfile", "/var/run/dbus/pid")
+            "--pidfile", "/run/dbus/pid")
 
 #############################
 # UDEV management functions #
@@ -817,7 +828,10 @@ def start_udev():
 
     # When these files are missing, lots of trouble happens
     # so we double check their existence
-    create_directory("/dev/shm")
+    ######
+    # we don't need that; mudur_tmpfiles and baselayout.conf creates this dir and symlink
+    #create_directory("/run/shm")
+    #create_link("/run/shm", "/dev/shm")
 
     # Start udev daemon
     UI.info(_("Starting udev"))
@@ -839,6 +853,7 @@ def start_udev():
     # Trigger events for all devices
     run("/sbin/udevadm", "trigger", "--type=subsystems", "--action=add")
     run("/sbin/udevadm", "trigger", "--type=devices", "--action=add")
+    run("/sbin/udevadm", "trigger", "--type=devices", "--action=change")
 
     # Stop udevmonitor
     os.kill(pid, 15)
@@ -905,7 +920,7 @@ def check_root_filesystem():
                 UI.warn(_("Filesystem repaired, but reboot needed!"))
                 i = 0
                 while i < 4:
-                    print "\07"
+                    print("\07")
                     time.sleep(1)
                     i += 1
                 UI.warn(_("Rebooting in 10 seconds..."))
@@ -999,6 +1014,20 @@ def mount_local_filesystems():
     UI.info(_("Mounting local filesystems"))
     run("/bin/mount", "-at", "noproc,nocifs,nonfs,nonfs4,noncpfs")
 
+@skip_for_lxc_guests
+@plymouth_update_milestone
+def mount_tmpfs_run():
+    df = os.popen('df 2>/dev/null', 'r')
+    for line in df.readlines():
+        line = line.strip()
+        if line.startswith("tmpfs") and line.endswith("/run"):
+            UI.info(_("Unmounting /run"))
+            run("/bin/umount", "/run")
+            break
+    df.close()
+    run_full("/bin/mount", "-t", "tmpfs", "-o", "nodev,nosuid,size=10%,mode=755", "tmpfs", "/run")
+    c = Cgroupfs()
+
 def mount_remote_filesystems():
     """Mounts remote filesystems."""
     from pardus.fstabutils import Fstab
@@ -1037,8 +1066,8 @@ def set_hostname():
         # kernel already got a hostname (pxeboot or something)
         host = khost
     else:
-        # if nothing found, use the default hostname 'pardus'
-        host = uhost if uhost else "pardus"
+        # if nothing found, use the default hostname 'pisilinux'
+        host = uhost if uhost else "pisilinux"
 
     if uhost and host != uhost:
         i = data.find('HOSTNAME="')
@@ -1074,10 +1103,10 @@ def set_disk_parameters():
     conf = load_config("/etc/conf.d/hdparm")
     if len(conf) > 0:
         UI.info(_("Setting disk parameters"))
-        if conf.has_key("all"):
+        if "all" in conf:
             for name in os.listdir("/sys/block/"):
                 if name.startswith("sd") and \
-                        len(name) == 3 and not conf.has_key(name):
+                        len(name) == 3 and name not in conf:
                     run_quiet("/sbin/hdparm", "%s" % conf["all"].split(),
                             "/dev/%s" % name)
         for key, value in conf:
@@ -1112,11 +1141,11 @@ def disable_swap():
 # Filesystem cleanup methods #
 ##############################
 
-def cleanup_var():
-    """Cleans up /var upon boot."""
-    UI.info(_("Cleaning up /var"))
+def cleanup_run():
+    """Cleans up /run upon boot."""
+    UI.info(_("Cleaning up /run"))
     blacklist = ["utmp", "random-seed", "livemedia"]
-    for root, dirs, files in os.walk("/var/run"):
+    for root, dirs, files in os.walk("/run"):
         for _file in files:
             if _file not in blacklist:
                 try:
@@ -1153,11 +1182,11 @@ def cleanup_tmp():
 
     create_directory("/tmp/.ICE-unix")
     os.chown("/tmp/.ICE-unix", 0, 0)
-    os.chmod("/tmp/.ICE-unix", 01777)
+    os.chmod("/tmp/.ICE-unix", 0o1777)
 
     create_directory("/tmp/.X11-unix")
     os.chown("/tmp/.X11-unix", 0, 0)
-    os.chmod("/tmp/.X11-unix", 01777)
+    os.chmod("/tmp/.X11-unix", 0o1777)
 
 ########################################
 # System time/Clock management methods #
@@ -1279,13 +1308,13 @@ def stop_system():
 def except_hook(e_type, e_value, e_trace):
     """Hook that intercepts and handles exceptions."""
     import traceback
-    print
-    print _("An internal error occured. Please report to the bugs.pardus.org.tr"
-            "with following information:").encode("utf-8")
-    print
-    print e_type, e_value
+    print()
+    print(_("An internal error occured. Please report to the bugs.pisilinux.org"
+            "with following information:").encode("utf-8"))
+    print()
+    print(e_type, e_value)
     traceback.print_tb(e_trace)
-    print
+    print()
     run_full("/sbin/sulogin")
 
 
@@ -1306,7 +1335,7 @@ def main():
     signal.signal(signal.SIGQUIT, signal.SIG_IGN)
     signal.signal(signal.SIGTSTP, signal.SIG_IGN)
     sys.excepthook = except_hook
-    os.umask(022)
+    os.umask(0o22)
 
     # Setup path just in case
     os.environ["PATH"] = "/bin:/sbin:/usr/bin:/usr/sbin:" + os.environ["PATH"]
@@ -1330,18 +1359,12 @@ def main():
         # Minimize dmesg noise
         minimize_printk_log_level()
 
-        # Start udev and event triggering
-        start_udev()
-
         # Check root file system
         check_root_filesystem()
 
         # Mount root file system
         mount_root_filesystem()
         SPLASH.rootfs_is_now_rw()
-
-        # Grab persistent rules and udev.log file from /dev
-        copy_udev_rules()
 
         # Set hostname
         set_hostname()
@@ -1354,6 +1377,7 @@ def main():
 
         # Mount local filesystems
         mount_local_filesystems()
+        mount_tmpfs_run()
 
         # Activate swap space
         enable_swap()
@@ -1367,17 +1391,32 @@ def main():
         # Set the system language
         set_system_language()
 
-        # Call udev settle
-        wait_for_udev_events()
-
         # When we exit this runlevel, init will write a boot record to utmp
-        write_to_file("/var/run/utmp")
+        write_to_file("/run/utmp")
         touch("/var/log/wtmp")
 
-        run("/bin/chgrp", "utmp", "/var/run/utmp", "/var/log/wtmp")
+        #create_directory("/run/lock")
+        #create_directory("/run/lock/subsys")
+        #create_directory("/run/pisilinux")
 
-        os.chmod("/var/run/utmp", 0664)
-        os.chmod("/var/log/wtmp", 0664)
+        run("/bin/chgrp", "utmp", "/run/utmp", "/var/log/wtmp")
+
+        os.chmod("/run/utmp", 0o664)
+        os.chmod("/var/log/wtmp", 0o664)
+
+        # Create tmpfiles
+        UI.info(_("Creating tmpfiles"))
+        if not os.path.isdir("/run/tmpfiles.d"): create_directory("/run/tmpfiles.d")
+        run("/usr/bin/kmod", "static-nodes", "--format=tmpfiles", "--output=/run/tmpfiles.d/kmod.conf")
+        out = [line for line in capture("/sbin/mudur_tmpfiles.py", "--boot")[0].split("\n") if line.strip()]
+        if out: LOGGER.log("Errors during tmpfiles creation.\n\t%s" % "\n\t".join(out))
+        run("mount", "-t", "tmpfs", "tmpfs", "/dev/shm")
+
+        # Start udev and event triggering
+        start_udev()
+
+        # Grab persistent rules and udev.log file from /dev
+        #copy_udev_rules()
 
     ### BOOT ###
     elif sys.argv[1] == "boot":
@@ -1390,8 +1429,9 @@ def main():
 
         run_sysctl()
 
-        # Cleanup /var
-        cleanup_var()
+        # Prune needsrestart and needsreboot files if any
+        prune_needs_action_package_list()
+        #cleanup_run()
 
         # Update environment variables according to the modification
         # time of the relevant files
@@ -1408,11 +1448,13 @@ def main():
         # Set unicode properties for ttys
         set_unicode_mode()
 
+        # Call udev settle
+#        trigger_failed_udev_events()
+        wait_for_udev_events()
+
     ### DEFAULT ###
     elif sys.argv[1] == "default":
         SPLASH.update("default_runlevel")
-
-        trigger_failed_udev_events()
 
         # Source local.start
         if not CONFIG.get("safe") and os.path.exists("/etc/conf.d/local.start"):
@@ -1473,7 +1515,7 @@ def main():
 # Main program starts here #
 ############################
 if __name__ == "__main__":
-    if get_kernel_option("mudur").has_key("profile"):
+    if "profile" in get_kernel_option("mudur"):
         import cProfile
         cProfile.run("main()", "/dev/.mudur-%s.log" % sys.argv[1])
     else:
